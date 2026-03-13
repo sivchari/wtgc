@@ -1,0 +1,17 @@
+coverage:
+  status:
+    project:
+      default:
+        target: 80%
+        threshold: 3%
+    patch:
+      default:
+        target: 80%
+
+ignore:
+  - "cmd/**"
+
+comment:
+  layout: "reach,diff,flags,files"
+  behavior: default
+  require_changes: true

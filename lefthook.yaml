@@ -1,0 +1,19 @@
+lefthook: |
+  go tool -modfile tools/go.mod github.com/evilmartians/lefthook
+
+pre-commit:
+  parallel: true
+  commands:
+    golangci-lint:
+      run: make golangci-lint
+      glob: "*.go"
+    test:
+      run: make test
+      glob: "*.go"
+    gomod:
+      run: go mod tidy -diff
+      glob: "{go.mod,go.sum}"
+    gomod-tools:
+      root: tools
+      run: go mod tidy -diff
+      glob: "tools/{go.mod,go.sum}"

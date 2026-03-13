@@ -1,0 +1,56 @@
+version: 2
+
+project_name: wtgc
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: wtgc
+    main: ./cmd/wtgc
+    binary: wtgc
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
+
+archives:
+  - id: wtgc
+    formats: ['tar.gz']
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: ['zip']
+    files:
+      - LICENSE
+      - README.md
+    ids:
+      - wtgc
+
+checksum:
+  name_template: "{{ .ProjectName }}_{{ .Version }}_checksums.txt"
+
+changelog:
+  sort: asc
+
+release:
+  use_existing_draft: true
+
+homebrew_casks:
+  - name: wtgc
+    repository:
+      owner: sivchari
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: https://github.com/sivchari/wtgc
+    description: "Git worktree garbage collector daemon"
+    license: MIT
+    binaries: [wtgc]

@@ -1,0 +1,28 @@
+name: Coverage
+
+on:
+  pull_request:
+
+jobs:
+  coverage:
+    name: Upload coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+      - uses: actions/cache@v5
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+      - run: go mod download
+      - name: Run tests with coverage
+        run: make test-coverage
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage.out
+          token: ${{ secrets.CODECOV_TOKEN }}
