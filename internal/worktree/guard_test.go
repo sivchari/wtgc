@@ -1,7 +1,6 @@
 package worktree_test
 
 import (
-	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -130,12 +129,10 @@ func TestWorktree_CheckSafety(t *testing.T) {
 func initGitRepo(t *testing.T, dir string) {
 	t.Helper()
 
-	ctx := context.Background()
-
 	run := func(args ...string) {
 		t.Helper()
 
-		cmd := exec.CommandContext(ctx, args[0], args[1:]...) //nolint:gosec // test helper with fixed git commands
+		cmd := exec.CommandContext(t.Context(), args[0], args[1:]...) //nolint:gosec // test helper with fixed git commands
 		cmd.Dir = dir
 
 		out, err := cmd.CombinedOutput()
@@ -205,7 +202,7 @@ func TestHasUncommittedChanges(t *testing.T) {
 			initGitRepo(t, dir)
 			tt.setup(t, dir)
 
-			got, err := worktree.HasUncommittedChanges(context.Background(), dir)
+			got, err := worktree.HasUncommittedChanges(t.Context(), dir)
 			if err != nil {
 				t.Fatalf("HasUncommittedChanges() error = %v", err)
 			}
