@@ -243,3 +243,222 @@ func TestGitProvider_Remove_force(t *testing.T) {
 		}
 	}
 }
+
+// lockWorktree locks the worktree at wtPath using git worktree lock.
+func lockWorktree(t *testing.T, repoDir, wtPath string) {
+	t.Helper()
+
+	//nolint:gosec // git is a trusted binary used only in tests
+	cmd := exec.CommandContext(t.Context(), "git", "-C", repoDir, "worktree", "lock", wtPath)
+
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git worktree lock: %v\n%s", err, out)
+	}
+}
+
+func TestGitProvider_List_detachedHead(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	hash := setupTestRepo(t, dir)
+
+	wtDir := t.TempDir()
+
+	//nolint:gosec // git is a trusted binary used only in tests
+	cmd := exec.CommandContext(t.Context(), "git", "-C", dir, "worktree", "add", "--detach", wtDir, hash)
+
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git worktree add --detach: %v\n%s", err, out)
+	}
+
+	p := NewGitProvider(dir)
+
+	worktrees, err := p.List(context.Background())
+	if err != nil {
+		t.Fatalf("List() error: %v", err)
+	}
+
+	if len(worktrees) != 2 {
+		t.Fatalf("List() returned %d worktrees, want 2", len(worktrees))
+	}
+
+	wt := worktrees[1]
+
+	if !wt.Detached {
+		t.Error("worktree should have Detached=true")
+	}
+
+	if wt.Branch != "" {
+		t.Errorf("Branch = %q, want empty for detached HEAD", wt.Branch)
+	}
+
+	if wt.Head != hash {
+		t.Errorf("Head = %q, want %q", wt.Head, hash)
+	}
+}
+
+func TestGitProvider_List_lockedWorktree(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	setupTestRepo(t, dir)
+
+	wtDir := t.TempDir()
+	addWorktree(t, dir, "locked-branch", wtDir)
+	lockWorktree(t, dir, wtDir)
+
+	p := NewGitProvider(dir)
+
+	worktrees, err := p.List(context.Background())
+	if err != nil {
+		t.Fatalf("List() error: %v", err)
+	}
+
+	if len(worktrees) != 2 {
+		t.Fatalf("List() returned %d worktrees, want 2", len(worktrees))
+	}
+
+	wt := worktrees[1]
+
+	if !wt.Locked {
+		t.Error("worktree should have Locked=true")
+	}
+}
+
+func TestGitProvider_List_error(t *testing.T) {
+	t.Parallel()
+
+	p := NewGitProvider("/nonexistent/repo/path")
+
+	_, err := p.List(context.Background())
+	if err == nil {
+		t.Fatal("List() on non-existent repo should return an error")
+	}
+}
+
+func TestGitProvider_Remove_error(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	setupTestRepo(t, dir)
+
+	p := NewGitProvider(dir)
+
+	wt := worktree.Worktree{Path: "/nonexistent/worktree/path"}
+
+	err := p.Remove(context.Background(), wt, false)
+	if err == nil {
+		t.Fatal("Remove() of non-existent worktree should return an error")
+	}
+}
+
+func TestApplyLine_bare(t *testing.T) {
+	t.Parallel()
+
+	var wt worktree.Worktree
+
+	applyLine("bare", &wt, false)
+
+	if !wt.Bare {
+		t.Error("applyLine(\"bare\") should set Bare=true")
+	}
+}
+
+func TestApplyLine_detached(t *testing.T) {
+	t.Parallel()
+
+	var wt worktree.Worktree
+
+	applyLine("detached", &wt, false)
+
+	if !wt.Detached {
+		t.Error("applyLine(\"detached\") should set Detached=true")
+	}
+}
+
+func TestApplyLine_locked(t *testing.T) {
+	t.Parallel()
+
+	var wt worktree.Worktree
+
+	applyLine("locked", &wt, false)
+
+	if !wt.Locked {
+		t.Error("applyLine(\"locked\") should set Locked=true")
+	}
+}
+
+func TestApplyLine_locked_withReason(t *testing.T) {
+	t.Parallel()
+
+	var wt worktree.Worktree
+
+	applyLine("locked reason: in use", &wt, false)
+
+	if !wt.Locked {
+		t.Error("applyLine(\"locked reason: ...\") should set Locked=true")
+	}
+}
+
+func TestApplyLine_prunable(t *testing.T) {
+	t.Parallel()
+
+	var wt worktree.Worktree
+
+	applyLine("prunable gitdir file points to non-existent location", &wt, false)
+
+	if !wt.Prunable {
+		t.Error("applyLine(\"prunable ...\") should set Prunable=true")
+	}
+}
+
+func TestParsePorcelain_trailingEntryWithoutBlankLine(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	hash := setupTestRepo(t, dir)
+
+	p := NewGitProvider(dir)
+
+	// Construct porcelain output that does NOT end with a trailing blank line.
+	data := []byte("worktree /some/path\nHEAD " + hash + "\nbranch refs/heads/main\n")
+
+	worktrees, err := p.parsePorcelain(context.Background(), data)
+	if err != nil {
+		t.Fatalf("parsePorcelain() error: %v", err)
+	}
+
+	if len(worktrees) != 1 {
+		t.Fatalf("parsePorcelain() returned %d worktrees, want 1", len(worktrees))
+	}
+
+	wt := worktrees[0]
+
+	if wt.Path != "/some/path" {
+		t.Errorf("Path = %q, want %q", wt.Path, "/some/path")
+	}
+
+	if wt.Branch != "main" {
+		t.Errorf("Branch = %q, want %q", wt.Branch, "main")
+	}
+}
+
+func TestFetchHeadDate_emptyHash(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	setupTestRepo(t, dir)
+
+	p := NewGitProvider(dir)
+
+	got, err := p.fetchHeadDate(context.Background(), "")
+	if err != nil {
+		t.Fatalf("fetchHeadDate(\"\") error: %v", err)
+	}
+
+	if !got.IsZero() {
+		t.Errorf("fetchHeadDate(\"\") = %v, want zero time", got)
+	}
+}
