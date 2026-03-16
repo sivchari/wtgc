@@ -1,7 +1,6 @@
 package provider
 
 import (
-	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -105,7 +104,7 @@ func TestGitProvider_List_main(t *testing.T) {
 
 	p := NewGitProvider(dir)
 
-	worktrees, err := p.List(context.Background())
+	worktrees, err := p.List(t.Context())
 	if err != nil {
 		t.Fatalf("List() error: %v", err)
 	}
@@ -148,7 +147,7 @@ func TestGitProvider_List_withWorktree(t *testing.T) {
 
 	p := NewGitProvider(dir)
 
-	worktrees, err := p.List(context.Background())
+	worktrees, err := p.List(t.Context())
 	if err != nil {
 		t.Fatalf("List() error: %v", err)
 	}
@@ -192,11 +191,11 @@ func TestGitProvider_Remove(t *testing.T) {
 	realWtDir := realPath(t, wtDir)
 	wt := worktree.Worktree{Path: wtDir}
 
-	if err := p.Remove(context.Background(), wt, false); err != nil {
+	if err := p.Remove(t.Context(), wt, false); err != nil {
 		t.Fatalf("Remove() error: %v", err)
 	}
 
-	worktrees, err := p.List(context.Background())
+	worktrees, err := p.List(t.Context())
 	if err != nil {
 		t.Fatalf("List() after Remove() error: %v", err)
 	}
@@ -228,11 +227,11 @@ func TestGitProvider_Remove_force(t *testing.T) {
 	realWtDir := realPath(t, wtDir)
 	wt := worktree.Worktree{Path: wtDir}
 
-	if err := p.Remove(context.Background(), wt, true); err != nil {
+	if err := p.Remove(t.Context(), wt, true); err != nil {
 		t.Fatalf("Remove(force=true) error: %v", err)
 	}
 
-	worktrees, err := p.List(context.Background())
+	worktrees, err := p.List(t.Context())
 	if err != nil {
 		t.Fatalf("List() after Remove(force) error: %v", err)
 	}
@@ -275,7 +274,7 @@ func TestGitProvider_List_detachedHead(t *testing.T) {
 
 	p := NewGitProvider(dir)
 
-	worktrees, err := p.List(context.Background())
+	worktrees, err := p.List(t.Context())
 	if err != nil {
 		t.Fatalf("List() error: %v", err)
 	}
@@ -311,7 +310,7 @@ func TestGitProvider_List_lockedWorktree(t *testing.T) {
 
 	p := NewGitProvider(dir)
 
-	worktrees, err := p.List(context.Background())
+	worktrees, err := p.List(t.Context())
 	if err != nil {
 		t.Fatalf("List() error: %v", err)
 	}
@@ -332,7 +331,7 @@ func TestGitProvider_List_error(t *testing.T) {
 
 	p := NewGitProvider("/nonexistent/repo/path")
 
-	_, err := p.List(context.Background())
+	_, err := p.List(t.Context())
 	if err == nil {
 		t.Fatal("List() on non-existent repo should return an error")
 	}
@@ -348,7 +347,7 @@ func TestGitProvider_Remove_error(t *testing.T) {
 
 	wt := worktree.Worktree{Path: "/nonexistent/worktree/path"}
 
-	err := p.Remove(context.Background(), wt, false)
+	err := p.Remove(t.Context(), wt, false)
 	if err == nil {
 		t.Fatal("Remove() of non-existent worktree should return an error")
 	}
@@ -425,7 +424,7 @@ func TestParsePorcelain_trailingEntryWithoutBlankLine(t *testing.T) {
 	// Construct porcelain output that does NOT end with a trailing blank line.
 	data := []byte("worktree /some/path\nHEAD " + hash + "\nbranch refs/heads/main\n")
 
-	worktrees, err := p.parsePorcelain(context.Background(), data)
+	worktrees, err := p.parsePorcelain(t.Context(), data)
 	if err != nil {
 		t.Fatalf("parsePorcelain() error: %v", err)
 	}
@@ -453,7 +452,7 @@ func TestFetchHeadDate_emptyHash(t *testing.T) {
 
 	p := NewGitProvider(dir)
 
-	got, err := p.fetchHeadDate(context.Background(), "")
+	got, err := p.fetchHeadDate(t.Context(), "")
 	if err != nil {
 		t.Fatalf("fetchHeadDate(\"\") error: %v", err)
 	}
