@@ -1,7 +1,6 @@
 package worktree
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os/exec"
@@ -66,15 +65,11 @@ func (wt *Worktree) CheckSafety() GuardResult {
 // HasUncommittedChanges runs `git status --porcelain` in the worktree directory
 // and returns true if there are any uncommitted changes.
 func HasUncommittedChanges(ctx context.Context, path string) (bool, error) {
-	cmd := exec.CommandContext(ctx, "git", "-C", path, "status", "--porcelain") //nolint:gosec // arguments are fixed strings except path
+	out, err := exec.CommandContext(ctx, "git", "-C", path, "status", "--porcelain").Output() //nolint:gosec // arguments are fixed strings except path
 
-	var out bytes.Buffer
-
-	cmd.Stdout = &out
-
-	if err := cmd.Run(); err != nil {
+	if err != nil {
 		return false, fmt.Errorf("git status in %s: %w", path, err)
 	}
 
-	return out.Len() > 0, nil
+	return len(out) > 0, nil
 }
