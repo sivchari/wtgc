@@ -120,40 +120,40 @@ func buildProviders(cfg *config.Config) []provider.Provider {
 	return providers
 }
 
-// executeDaemon runs the daemon loop for all configured providers.
-func executeDaemon(cfg *config.Config) error {
+// execute creates a signal-aware context, builds providers, and calls action for each provider.
+func execute(cfg *config.Config, action func(ctx context.Context, d *daemon.Daemon) error) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
 	logger := buildLogger(cfg)
-	providers := buildProviders(cfg)
 
-	for _, p := range providers {
-		d := daemon.New(*cfg, p, logger)
-
-		if err := d.Run(ctx); err != nil {
-			return fmt.Errorf("daemon run: %w", err)
+	for _, p := range buildProviders(cfg) {
+		if err := action(ctx, daemon.New(*cfg, p, logger)); err != nil {
+			return err
 		}
 	}
 
 	return nil
 }
 
+// executeDaemon runs the daemon loop for all configured providers.
+func executeDaemon(cfg *config.Config) error {
+	return execute(cfg, func(ctx context.Context, d *daemon.Daemon) error {
+		if err := d.Run(ctx); err != nil {
+			return fmt.Errorf("daemon run: %w", err)
+		}
+
+		return nil
+	})
+}
+
 // executeRunOnce performs a single cleanup pass for all configured providers.
 func executeRunOnce(cfg *config.Config) error {
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer cancel()
-
-	logger := buildLogger(cfg)
-	providers := buildProviders(cfg)
-
-	for _, p := range providers {
-		d := daemon.New(*cfg, p, logger)
-
+	return execute(cfg, func(ctx context.Context, d *daemon.Daemon) error {
 		if err := d.RunOnce(ctx); err != nil {
 			return fmt.Errorf("run once: %w", err)
 		}
-	}
 
-	return nil
+		return nil
+	})
 }

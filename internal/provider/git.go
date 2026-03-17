@@ -37,12 +37,7 @@ func (g *GitProvider) List(ctx context.Context) ([]worktree.Worktree, error) {
 		return nil, fmt.Errorf("git worktree list: %w", err)
 	}
 
-	worktrees, err := g.parsePorcelain(ctx, out)
-	if err != nil {
-		return nil, fmt.Errorf("parse porcelain output: %w", err)
-	}
-
-	return worktrees, nil
+	return g.parsePorcelain(ctx, out)
 }
 
 // Remove removes the worktree at wt.Path, optionally with --force.
@@ -95,6 +90,18 @@ func applyLine(line string, current *worktree.Worktree, first bool) {
 	}
 }
 
+// flush resolves the HEAD date for current and appends it to worktrees.
+func (g *GitProvider) flush(ctx context.Context, worktrees []worktree.Worktree, current *worktree.Worktree) ([]worktree.Worktree, error) {
+	headDate, err := g.fetchHeadDate(ctx, current.Head)
+	if err != nil {
+		return nil, fmt.Errorf("fetch HEAD date for %s: %w", current.Path, err)
+	}
+
+	current.HeadDate = headDate
+
+	return append(worktrees, *current), nil
+}
+
 // parsePorcelain parses the output of `git worktree list --porcelain`.
 func (g *GitProvider) parsePorcelain(ctx context.Context, data []byte) ([]worktree.Worktree, error) {
 	var (
@@ -120,7 +127,7 @@ func (g *GitProvider) parsePorcelain(ctx context.Context, data []byte) ([]worktr
 
 		var err error
 
-		worktrees, err = g.flushEntry(ctx, worktrees, &current)
+		worktrees, err = g.flush(ctx, worktrees, &current)
 		if err != nil {
 			return nil, err
 		}
@@ -133,32 +140,16 @@ func (g *GitProvider) parsePorcelain(ctx context.Context, data []byte) ([]worktr
 		return nil, fmt.Errorf("scan porcelain output: %w", err)
 	}
 
-	if current.Path == "" {
-		return worktrees, nil
-	}
+	if current.Path != "" {
+		var err error
 
-	worktrees, err := g.flushEntry(ctx, worktrees, &current)
-	if err != nil {
-		return nil, err
+		worktrees, err = g.flush(ctx, worktrees, &current)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return worktrees, nil
-}
-
-// flushEntry resolves the HEAD date for current and appends it to worktrees.
-func (g *GitProvider) flushEntry(
-	ctx context.Context,
-	worktrees []worktree.Worktree,
-	current *worktree.Worktree,
-) ([]worktree.Worktree, error) {
-	headDate, err := g.fetchHeadDate(ctx, current.Head)
-	if err != nil {
-		return nil, fmt.Errorf("fetch HEAD date for %s: %w", current.Path, err)
-	}
-
-	current.HeadDate = headDate
-
-	return append(worktrees, *current), nil
 }
 
 // fetchHeadDate retrieves the committer date of the given commit hash.

@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/sivchari/wtgc/internal/config"
@@ -297,19 +298,31 @@ func TestRun_StopsOnContextCancel(t *testing.T) {
 
 	cfg := config.Default()
 	cfg.MaxAge = 365 * 24 * time.Hour // nothing stale; fast path
-	cfg.Interval = 20 * time.Millisecond
+	cfg.Interval = time.Hour
 	cfg.Directories = []string{repoDir}
 
 	p := provider.NewGitProvider(repoDir)
-	d := daemon.New(cfg, p, newLogger())
 
-	// Allow at least two ticks so the ticker branch is exercised.
-	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
-	defer cancel()
+	// Use synctest.Test to control fake time so this test runs instantly.
+	synctest.Test(t, func(t *testing.T) {
+		d := daemon.New(cfg, p, newLogger())
 
-	if err := d.Run(ctx); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
+		ctx, cancel := context.WithCancel(context.Background())
+
+		done := make(chan error, 1)
+
+		go func() {
+			done <- d.Run(ctx)
+		}()
+
+		// Advance fake time past two intervals so the ticker branch is exercised.
+		time.Sleep(3 * time.Hour)
+		cancel()
+
+		if err := <-done; err != nil {
+			t.Errorf("Run: %v", err)
+		}
+	})
 }
 
 func TestRunOnce_InvalidExcludePatternSkipped(t *testing.T) {

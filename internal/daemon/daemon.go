@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/sivchari/wtgc/internal/config"
@@ -64,33 +65,66 @@ func (d *Daemon) RunOnce(ctx context.Context) error {
 }
 
 // processWorktree evaluates a single worktree and removes it when eligible.
+//
+//nolint:cyclop,funlen // the linear decision chain is intentionally sequential; extracting helpers would obscure the logic
 func (d *Daemon) processWorktree(ctx context.Context, wt *worktree.Worktree) {
-	if wt.MainWorktree {
+	if wt.MainWorktree || !wt.IsStale(d.cfg.MaxAge) {
 		return
 	}
 
-	if !wt.IsStale(d.cfg.MaxAge) {
+	// Safety check: locked or main worktree.
+	if guard := wt.CheckSafety(); !guard.Safe {
+		reasons := make([]string, 0, len(guard.Reasons))
+
+		for _, r := range guard.Reasons {
+			reasons = append(reasons, r.String())
+		}
+
+		d.logger.InfoContext(ctx, "skipping worktree: "+strings.Join(reasons, ", "), slog.String("path", wt.Path))
+
 		return
 	}
 
-	if !d.isSafeToRemove(ctx, wt) {
-		return
+	// Safety check: uncommitted changes (skipped when force is set).
+	if !d.cfg.Force {
+		dirty, checkErr := worktree.HasUncommittedChanges(ctx, wt.Path)
+		if checkErr != nil {
+			d.logger.WarnContext(ctx, "could not check uncommitted changes",
+				slog.String("path", wt.Path),
+				slog.String("error", checkErr.Error()),
+			)
+
+			return
+		}
+
+		if dirty {
+			d.logger.InfoContext(ctx, "skipping worktree: uncommitted changes", slog.String("path", wt.Path))
+
+			return
+		}
 	}
 
-	if d.isExcluded(wt.Branch) {
-		d.logger.InfoContext(ctx, "skipping worktree: branch excluded",
-			slog.String("path", wt.Path),
-			slog.String("branch", wt.Branch),
-		)
+	// Exclude check: branch matches a configured glob pattern.
+	for _, pattern := range d.cfg.Exclude {
+		matched, err := filepath.Match(pattern, wt.Branch)
+		if err != nil {
+			d.logger.Warn("invalid exclude pattern",
+				slog.String("pattern", pattern),
+				slog.String("error", err.Error()),
+			)
 
-		return
+			continue
+		}
+
+		if matched {
+			d.logger.InfoContext(ctx, "skipping worktree: branch excluded", slog.String("path", wt.Path), slog.String("branch", wt.Branch))
+
+			return
+		}
 	}
 
 	if d.cfg.DryRun {
-		d.logger.InfoContext(ctx, "dry-run: would remove worktree",
-			slog.String("path", wt.Path),
-			slog.String("branch", wt.Branch),
-		)
+		d.logger.InfoContext(ctx, "dry-run: would remove worktree", slog.String("path", wt.Path), slog.String("branch", wt.Branch))
 
 		return
 	}
@@ -104,70 +138,5 @@ func (d *Daemon) processWorktree(ctx context.Context, wt *worktree.Worktree) {
 		return
 	}
 
-	d.logger.InfoContext(ctx, "removed stale worktree",
-		slog.String("path", wt.Path),
-		slog.String("branch", wt.Branch),
-	)
-}
-
-// isSafeToRemove returns true when the worktree passes all safety checks.
-// It logs a reason for each check that fails.
-func (d *Daemon) isSafeToRemove(ctx context.Context, wt *worktree.Worktree) bool {
-	guard := wt.CheckSafety()
-	if !guard.Safe {
-		for _, reason := range guard.Reasons {
-			d.logger.InfoContext(ctx, "skipping worktree",
-				slog.String("path", wt.Path),
-				slog.String("reason", reason.String()),
-			)
-		}
-
-		return false
-	}
-
-	if d.cfg.Force {
-		return true
-	}
-
-	dirty, checkErr := worktree.HasUncommittedChanges(ctx, wt.Path)
-	if checkErr != nil {
-		d.logger.WarnContext(ctx, "could not check uncommitted changes",
-			slog.String("path", wt.Path),
-			slog.String("error", checkErr.Error()),
-		)
-
-		return false
-	}
-
-	if dirty {
-		d.logger.InfoContext(ctx, "skipping worktree",
-			slog.String("path", wt.Path),
-			slog.String("reason", worktree.ReasonUncommittedChanges.String()),
-		)
-
-		return false
-	}
-
-	return true
-}
-
-// isExcluded reports whether branch matches any pattern in cfg.Exclude.
-func (d *Daemon) isExcluded(branch string) bool {
-	for _, pattern := range d.cfg.Exclude {
-		matched, err := filepath.Match(pattern, branch)
-		if err != nil {
-			d.logger.Warn("invalid exclude pattern",
-				slog.String("pattern", pattern),
-				slog.String("error", err.Error()),
-			)
-
-			continue
-		}
-
-		if matched {
-			return true
-		}
-	}
-
-	return false
+	d.logger.InfoContext(ctx, "removed stale worktree", slog.String("path", wt.Path), slog.String("branch", wt.Branch))
 }
