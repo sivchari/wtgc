@@ -34,30 +34,17 @@ func New(cfg config.Config, p provider.Provider, logger *slog.Logger) *Daemon {
 // Run starts the daemon loop. It performs an initial cleanup pass and then
 // repeats at cfg.Interval until ctx is cancelled.
 func (d *Daemon) Run(ctx context.Context) error {
-	if err := d.RunOnce(ctx); err != nil {
-		if ctx.Err() != nil {
-			return nil
-		}
-
-		return err
-	}
-
 	ticker := time.NewTicker(d.cfg.Interval)
-	defer ticker.Stop()
 
 	for {
+		if err := d.RunOnce(ctx); err != nil {
+			d.logger.ErrorContext(ctx, "cleanup pass failed", slog.String("error", err.Error()))
+		}
+
 		select {
 		case <-ctx.Done():
 			return nil
-
 		case <-ticker.C:
-			if err := d.RunOnce(ctx); err != nil {
-				if ctx.Err() != nil {
-					return nil
-				}
-
-				d.logger.ErrorContext(ctx, "cleanup pass failed", slog.String("error", err.Error()))
-			}
 		}
 	}
 }
