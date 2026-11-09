@@ -2,4 +2,4 @@
 package wtgc
 
 // Version is the current version of wtgc.
-const Version = "0.0.0"
+const Version = "0.0.1"
